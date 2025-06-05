@@ -1,7 +1,7 @@
 # Sistema de control de temperatura con display, teclado y corte automático tipo "pava eléctrica"
 
 ## Descripción general
-Este proyecto simula el funcionamiento de una pava eléctrica con corte automático. Utiliza un microcontrolador PIC16F877 y emplea sus principales periféricos: entradas analógicas (ADC), salidas digitales, teclado matricial, display de 7 segmentos y el temporizador Watchdog.  
+Este proyecto simula el funcionamiento de una pava eléctrica con corte automático. Utiliza un microcontrolador PIC16F887 y emplea sus principales periféricos: entradas analógicas (ADC), salidas digitales, teclado matricial, display de 7 segmentos y el temporizador Watchdog.  
 El sistema mide la temperatura mediante un sensor analógico (como el LM35), convierte la señal a digital con el ADC interno del PIC, y muestra la temperatura actual en dos display de 7 segmentos. El usuario puede ingresar una temperatura de corte mediante un teclado matricial. Cuando la temperatura medida supera ese valor, se enciende un LED indicando que el sistema alcanzó el umbral, como si la pava se apagará.  
 Además, el sistema transmite los valores de temperatura y el umbral configurado mediante comunicación serie (UART), lo que permite visualizar y registrar datos desde una computadora u otro dispositivo.
 
