@@ -7,15 +7,15 @@
 
 SEPARAR_3DIGITOS:
     ; Leer ADRESH (banco 0)
+    BCF     STATUS, RP0
+    BCF     STATUS, RP1
     MOVF    ADRESH, W
     MOVWF   temp16H
 
     ; Leer ADRESL (banco 1)
     BSF     STATUS, RP0
-    BCF     STATUS, RP1
     MOVF    ADRESL, W
     BCF     STATUS, RP0    ; Volver a banco 0
-    BCF     STATUS, RP1
     MOVWF   temp16L
 
     CLRF    centenas
