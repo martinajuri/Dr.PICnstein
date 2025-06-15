@@ -1,13 +1,13 @@
 LIST    P=16F887
 #include <P16F887.inc>
+#include <macros.inc>
+#include <rutinas.inc>
     __CONFIG    _CONFIG1, _WDT_OFF
 
 ORG 0x00
-GOTO INICIO
-
+    GOTO INICIO
 ORG 0x04
-GOTO ISR
-
+    GOTO ISR
 ; --- Variables ---
 CBLOCK 0x20
     digito_actual   ; 0, 1, 2 para multiplexado
@@ -21,165 +21,142 @@ ENDC
 
 INCLUDE "separar_3digitos.asm"
     
-; --- Tabla de conversión a 7 segmentos (anodo común) ---
-; 0-9: 0x3F, 0x06, 0x5B, 0x4F, 0x66, 0x6D, 0x7D, 0x07, 0x7F, 0x6F
-TABLA_7SEG
-    ADDWF   PCL, F
-    RETLW   0xC0    ; 0
-    RETLW   0xF9    ; 1
-    RETLW   0xA4    ; 2
-    RETLW   0xB0    ; 3
-    RETLW   0x99    ; 4
-    RETLW   0x92    ; 5
-    RETLW   0x82    ; 6
-    RETLW   0xF8    ; 7
-    RETLW   0x80    ; 8
-    RETLW   0x90    ; 9
+
 
 ; --- Programa principal ---
 INICIO:
-    ; Configuración de puertos
+    ; ConfiguraciÃ³n de puertos
     ; ANSEL RA5 digital (banco 3) (11)
-    BSF    STATUS, RP0
-    BSF    STATUS, RP1
-    MOVLW   b'00000100'     ; RA2 como analógico (AN2) y el resto digitales
-    MOVWF   ANSEL           
+    BANK3
+    MOVLW   b'00011111'     ; RA2 como analÃ³gico (AN2) y el resto digitales
+    MOVWF   ANSEL
+    CLRF    ANSELH          ; Setear puerto B como digital          
 
-    ; Configuración de puertos
+    ; ConfiguraciÃ³n de puertos
     ; TRISA y TRISD (banco 1) (01)
-    BCF     STATUS, RP1
+    BANK1
     MOVLW   b'00011111'
     MOVWF   TRISA           ;  RA0-RA2 entrada
     CLRF    TRISC           ; PORTC como salida para LEDs
     CLRF    TRISD           ; PORTD como salida (segmentos)
     CLRF    TRISE           ; PORTD como salida RE0, RE1, RE2 como salida (multiplex)
+    MOVLW   0x0F            ; RB7-RB4 Salidas (fil), RB3-RB0 Entradas (col)
+    MOVWF	TRISB
 
-    ; Configuración ADC ADCON1: (banco 1) (01)
-    MOVLW   b'00010000'     ; vref+ = AN3, vref- = Vss (porque es el puerto AN2 donde esta el sensor)
+    ; ConfiguraciÃ³n de OPTION_REG
+    MOVLW   B'00000111'     ; Habilitar pull-ups, prescaler 1:16
+    MOVWF   OPTION_REG
+    
+    ; Configuracion de OSCCON
+    MOVLW   B'01100001'
+    MOVWF    OSCCON
+
+    ; ConfiguraciÃ³n ADC ADCON1: (banco 1) (01)
+    MOVLW   b'10000000'     ; vref+ = AN3, vref- = Vss (porque es el puerto AN2 donde esta el sensor)
     MOVWF   ADCON1
 
-    ; Habilitar interrupciones ADC PIE1: (banco 1) (01)
-    BSF     PIE1, ADIE      ; Habilita interrupción ADC
-    BSF     INTCON, PEIE    ; Habilita interrupciones periféricas
-    BSF     INTCON, GIE     ; Habilita interrupciones globales
-
+    ; Configuracion de IOCB
+    MOVLW   B'00000001' ; Habilitar interrupciones por cambio en RB0
+    MOVWF   IOCB
 
     ; ADCON0: canal 2 (AN2), ADC ON (banco 0) (00)
-    BCF     STATUS, RP0
-    MOVLW   b'10001001'     ; ADCS=10(Fosc/32) CHS=0010 (AN2), ADON=1, GO=0
+    BANK0
+    MOVLW   b'01000101'     ; ADCS=10(Fosc/32) CHS=0010 (AN2), ADON=1, GO=0
     MOVWF   ADCON0
 
-    ; Configuración de PORTA y PORTD (banco 0) (00)
+    ; ConfiguraciÃ³n de interrupciones
+    MOVLW   b'10001000' ; Habilitar interrupciones globales y por cambio Puerto B
+    MOVWF   INTCON
+
+    ; ConfiguraciÃ³n de PORTA y PORTD (banco 0) (00)
     CLRF    PORTA
     CLRF    PORTD
     CLRF    PORTE
     MOVLW   b'00001111' ; Inicializar PORTC con LEDs apagados
     MOVWF   PORTC
 
-    BCF PORTC, 0        ; Prender LED RC0 (inicio del ciclo)
-    ; Pequeño retardo para ADC (requerido por Proteus)
-    NOP
-    NOP
-    NOP
-    NOP
-    ; Iniciar primera conversión ADC
+    BCF PORTC, 3        ; Prender LED RC0 (inicio del ciclo)
+    ; PequeÃ±o retardo para ADC (requerido por Proteus)
+    CALL RETARDO
+    ; Iniciar conversiÃ³n ADC
     BSF     ADCON0, GO
-    BCF     PORTC, 1        ; Prender LED RC1 (inicio ADC)
+    BCF     PORTC, 4        ; Prender LED RC1 (inicio ADC)
 
     CLRF    digito_actual
 
 MAIN_LOOP:
-    BCF    PORTC, 2        ; prender LED RC2 (inicio del ciclo)
-    ; --- Multiplexar displays continuamente ---
-    MOVF    digito_actual, W
-    BTFSC   STATUS, Z
-    GOTO    DISPLAY_CENTENAS
-    MOVF    digito_actual, W
-    XORLW   0x01
-    BTFSC   STATUS, Z
-    GOTO    DISPLAY_DECENAS
-    GOTO    DISPLAY_UNIDADES
-    BSF    PORTC, 2        ; apagar LED RC2 (fin del ciclo)
+    BCF    PORTC, 2             ; prender LED RC2 (inicio del ciclo)   
+    CALL    MOSTRAR_DISPLAY     ; Mostrar los digitos en el display
+    BTFSS   ADCON0, GO          ; Verificar si la conversiÃ³n ADC estÃ¡ en curso
+    CALL    ADC                 ; Si no estÃ¡ en curso, llamar a la rutina de ADC
+    BSF    PORTC, 2             ; apagar LED RC2 (fin del ciclo)
 
-
-DISPLAY_CENTENAS:
-    MOVF    centenas, W
-    CALL    TABLA_7SEG
-    MOVWF   PORTD
-    ; Activar RA5 (centenas)
-    MOVLW   b'00000001'
-    MOVWF   PORTE
-    GOTO    RETARDO_Y_SIG
-
-DISPLAY_DECENAS:
-    MOVF    decenas, W
-    CALL    TABLA_7SEG
-    MOVWF   PORTD
-    ; Activar RA6 (decenas)
-    MOVLW   b'00000010'
-    MOVWF   PORTE
-    GOTO    RETARDO_Y_SIG
-
-DISPLAY_UNIDADES:
-    MOVF    unidades, W
-    CALL    TABLA_7SEG
-    MOVWF   PORTD
-    ; Activar RA7 (unidades)
-    MOVLW   b'00000100'
-    MOVWF   PORTE
-
-RETARDO_Y_SIG:
-    CALL    RETARDO
-
-    INCF    digito_actual, F
-    MOVF    digito_actual, W
-    SUBLW   d'3'
-    BTFSS   STATUS, Z
-    GOTO    MAIN_LOOP
-    CLRF    digito_actual
     GOTO    MAIN_LOOP
 
-; --- Rutina de retardo visible para multiplexado ---
-RETARDO:
-    MOVLW   D'250'
-    MOVWF   temp16H
-RET1:
-    MOVLW   D'250'
-    MOVWF   temp16L
-RET2:
-    NOP
-    NOP
-    NOP
-    DECFSZ  temp16L, F
-    GOTO    RET2
-    DECFSZ  temp16H, F
-    GOTO    RET1
+
+
+
+LOOP:   ; hay alguna tecla presionada?
+	MOVLW 0x0F	    ; pongo 1 todas las columnas
+	MOVWF PORTB	    ; 
+	MOVF  PORTB, W	    ; y veo todas las filas
+    ANDLW 0xF0          ; enmascarar filas
+    BTFSC STATUS, Z
+	GOTO  LOOP	    ; no hay teclas presionadas -> vuelvo al loop
+	; Si -> Antirebote
+	CALL  RETARDO
+	MOVF  PORTB, W	    ; 
+    ANDLW 0xF0          ; 
+    BTFSC STATUS, Z
+	GOTO  LOOP	    ; no hay teclas presionadas -> vuelvo al loop
+	; Si -> voy a escanear las teclas
+	CALL  ESCANEAR_TECLAS
     RETURN
 
-; --- Rutina de interrupción ---
+ESCANEAR_TECLAS:
+	CLRF  COL	    ; col 1
+	MOVLW 0x08	    ; RB3
+	MOVWF COLMASK	    ; en alto
+ESCANEAR_FILAS:		    ; detectar fila
+	CLRF  INDICE
+	MOVF  COLMASK, W
+	MOVWF PORTB
+        BTFSC PORTB, 4	    ; fila 1 en alto?
+        GOTO  OFFSET_COL	    ; si -> offset=0
+	CALL  SUMO_4	    ; no -> Indice += 4, y sigo
+	BTFSC PORTB, 5	    ; fila 2 en alto?
+        GOTO  OFFSET_COL	    ; si -> offset=4
+	CALL  SUMO_4	    ; no -> Indice += 4, y sigo
+        BTFSC PORTB, 6	    ; fila 3 en alto?
+        GOTO  OFFSET_COL	    ; si -> offset=8	    
+	CALL  SUMO_4	    ; no -> Indice += 4, y sigo
+	BTFSC PORTB, 7	    ; fila 4 en alto?
+        GOTO  OFFSET_COL     ; si -> offset=12
+	RRF   COLMASK	    ; no -> siguiente columna
+	INCF  COL, 1	    ; 
+	MOVLW 0x04
+	SUBWF COL
+	BTFSS STATUS, Z	    ; todas las columnas?
+	GOTO  ESCANEAR_FILAS; no -> seguimos
+	MOVLW 0xFF	    ; si -> volvemos
+	MOVF  INDICE, 1	    ;	    con el indice en 0xFF
+	RETURN
+OFFSET_COL:
+	MOVF  COL, W
+	ADDWF INDICE, 1
+	RETURN		    
+
+
+
 ISR:
-    BTFSS   PIR1, ADIF      ; ¿Interrupción ADC?
-    RETFIE
-    BCF     PIR1, ADIF      ; Limpia flag ADC
-    BSF     PORTC, 1        ; Apagar LED RC1 (fin del ciclo)
-    ; Actualiza centenas, decenas y unidades
-    CALL    SEPARAR_3DIGITOS
+    BTFSC   INTCON, RBIF ; Verificar si es interrupción por cambio en PORTB
+    GOTO    ISR_PORTB
 
-    ; Retardo antes de iniciar nueva conversión ADC
-    MOVLW   D'100'
-    MOVWF   temp16H
+    RETFIE              ; Si no es interrupción por cambio, retornar de la interrupción
 
-WAIT_ADC:
-    NOP
-    DECFSZ  temp16H, F
-    GOTO    WAIT_ADC
 
-    ; Inicia una nueva conversión ADC
-    BSF     ADCON0, GO
-    BCF     PORTC, 1        ; Prender LED RC1 (inicio ADC)
-
-    RETFIE
-    
+ISR_PORTB:
+    BTFSS   
     END
 
     ;CALL en la interrupción
