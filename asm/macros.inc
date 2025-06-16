@@ -14,8 +14,18 @@ BANK2       macro
     BSF STATUS,RP1
     BCF STATUS,RP0
             endm
-            
+
 BANK3       macro
     BSF STATUS,RP1
     BSF STATUS,RP0
+            endm
+
+TURNON      macro
+    BSF     PORTC, 2
+    BSF     PORTC, 4
+            endm
+            
+TURNOFF     macro
+    BCF     PORTC, 2
+    BCF     PORTC, 4
             endm

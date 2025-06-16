@@ -55,11 +55,23 @@ LOOP_RETARDO:
     BTFSS INTCON, TMR0IF    ; Espera a que TMR0 se desborde
     GOTO LOOP_RETARDO       ; Si no se desbordó, espera
     RETURN
-
+    
+RETARDO_200ms:
+    CALL RETARDO
+    CALL RETARDO
+    CALL RETARDO
+    CALL RETARDO
+    CALL RETARDO
+    CALL RETARDO
+    CALL RETARDO
+    CALL RETARDO
+    CALL RETARDO
+    CALL RETARDO
+    RETURN
+    
 ; --- Rutina de ADC ---
 ADC:
     BANK0
-    BCF     PORTC, 4        ; Apagar LED RC1 (fin del ciclo)
 
     ; Prueba de conversión ADC
     MOVLW   b'00000000'
@@ -68,12 +80,23 @@ ADC:
     MOVLW   b'00000000'
     MOVWF   ADRESL
     
+    ; Leer ADRESH (banco 0)
+    BANK0
+    MOVF    ADRESH, W
+    MOVWF   temp16H
+
+    ; Leer ADRESL (banco 1)
+    BANK1
+    MOVF    ADRESL, W
+    BANK0
+    MOVWF   temp16L
+
     ; Actualiza centenas, decenas y unidades
     CALL    SEPARAR_3DIGITOS
 
     ; Iniciar nueva conversión ADC
     BSF     ADCON0, GO
-    BSF     PORTC, 4        ; Prender LED RC1 (inicio ADC)
+
     RETURN
 
 
@@ -91,6 +114,28 @@ TABLA_7SEG
     RETLW   0x80    ; 8
     RETLW   0x90    ; 9
 
+; --- Tabla de teclas ---
+TECLAS:
+    ADDWF PCL, f
+    RETLW D'7'     ; 7
+    RETLW D'8'     ; 8
+    RETLW D'9'     ; 9
+    RETLW 0x10     ; OPTIONS
+    RETLW D'4'     ; 4
+    RETLW D'5'     ; 5
+    RETLW D'6'     ; 6
+    RETLW 0x20     ; ONNOFF
+    RETLW D'1'     ; 1
+    RETLW D'2'     ; 2
+    RETLW D'3'     ; 3
+    RETLW 0x20     ; 11
+    RETLW 0x20     ; 12
+    RETLW D'0'     ; 13
+    RETLW 0x20     ; 14
+    RETLW 0x20     ; 15
+
+
+    
 ; -----------------------------------
 ; en algun init llamen a INIT_UART
 ; y que en las variables definen las necesarias acá

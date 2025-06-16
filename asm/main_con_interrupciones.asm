@@ -1,38 +1,60 @@
 LIST    P=16F887
 #include <P16F887.inc>
 #include <macros.inc>
-#include <rutinas.inc>
     __CONFIG    _CONFIG1, _WDT_OFF
 
 ORG 0x00
     GOTO INICIO
 ORG 0x04
     GOTO ISR
+    
 ; --- Variables ---
 CBLOCK 0x20
-    digito_actual   ; 0, 1, 2 para multiplexado
-    tabla7seg       ; valor a mostrar en el display
+    tabla7seg       
     temp16H
     temp16L
     centenas
     decenas
     unidades
+    factor
+    TCH
+    TCL
 ENDC
 
-INCLUDE "separar_3digitos.asm"
+; --- KEYPAD ---
+;RB0-RB3: Columnas (entrada)
+;RB0 = Columna 4
+;RB1 = Columna 3    
+;RB2 = Columna 2
+;RB3 = Columna 1
+;RB4-RB7: Filas (salida)
+;RB4 = Fila 4
+;RB5 = Fila 3
+;RB6 = Fila 2
+;RB7 = Fila 1
+; --- Variables para el keypad ---
+CBLOCK 0x30
+    ROW             ; Fila seleccionada
+    ROWMASK         ; Mascara de filas
+    INDICE          ; Indice de la tecla presionada
+    COL             ; Columna seleccionada
+    COLMASK         ; Mascara de columnas
+    TECLA           ; Tecla presionada
+ENDC
+
+INCLUDE "3digitos.asm"
+INCLUDE "rutinas.asm"
     
-
-
 ; --- Programa principal ---
 INICIO:
-    ; ConfiguraciÃ³n de puertos
+    ; Configuración de puertos
     ; ANSEL RA5 digital (banco 3) (11)
     BANK3
-    MOVLW   b'00011111'     ; RA2 como analÃ³gico (AN2) y el resto digitales
+    MOVLW   b'00011111'     ; RA2 como analógico (AN2) y el resto digitales
     MOVWF   ANSEL
     CLRF    ANSELH          ; Setear puerto B como digital          
 
-    ; ConfiguraciÃ³n de puertos
+    ; Configuración de puertos
     ; TRISA y TRISD (banco 1) (01)
     BANK1
     MOVLW   b'00011111'
@@ -43,15 +65,15 @@ INICIO:
     MOVLW   0x0F            ; RB7-RB4 Salidas (fil), RB3-RB0 Entradas (col)
     MOVWF	TRISB
 
-    ; ConfiguraciÃ³n de OPTION_REG
-    MOVLW   B'00000111'     ; Habilitar pull-ups, prescaler 1:16
+    ; Configuración de OPTION_REG
+    MOVLW   B'10000111'     ; Deshabilitar pull-ups, prescaler 1:16
     MOVWF   OPTION_REG
     
     ; Configuracion de OSCCON
     MOVLW   B'01100001'
     MOVWF    OSCCON
 
-    ; ConfiguraciÃ³n ADC ADCON1: (banco 1) (01)
+    ; Configuración ADC ADCON1: (banco 1) (01)
     MOVLW   b'10000000'     ; vref+ = AN3, vref- = Vss (porque es el puerto AN2 donde esta el sensor)
     MOVWF   ADCON1
 
@@ -64,90 +86,131 @@ INICIO:
     MOVLW   b'01000101'     ; ADCS=10(Fosc/32) CHS=0010 (AN2), ADON=1, GO=0
     MOVWF   ADCON0
 
-    ; ConfiguraciÃ³n de interrupciones
+    ; Configuración de interrupciones
     MOVLW   b'10001000' ; Habilitar interrupciones globales y por cambio Puerto B
     MOVWF   INTCON
 
-    ; ConfiguraciÃ³n de PORTA y PORTD (banco 0) (00)
+    ; Inicialización de puertos (banco 0) (00)
     CLRF    PORTA
     CLRF    PORTD
     CLRF    PORTE
     MOVLW   b'00001111' ; Inicializar PORTC con LEDs apagados
     MOVWF   PORTC
+    MOVLW   0xF0            ; Inicializar PORTB con filas en alto
+    MOVWF   PORTB
 
-    BCF PORTC, 3        ; Prender LED RC0 (inicio del ciclo)
-    ; PequeÃ±o retardo para ADC (requerido por Proteus)
-    CALL RETARDO
-    ; Iniciar conversiÃ³n ADC
+    ; Pequeño retardo para ADC (requerido por Proteus)
+    CALL    RETARDO
+
+    ; Inicializo la temperatura de corte en 80 grados
+    MOVLW   B'00000011'
+    MOVWF   TCH
+    MOVLW   B'00100000'
+    MOVWF   TCL
+
+    ; Iniciar conversión ADC
     BSF     ADCON0, GO
-    BCF     PORTC, 4        ; Prender LED RC1 (inicio ADC)
 
-    CLRF    digito_actual
+
 
 MAIN_LOOP:
-    BCF    PORTC, 2             ; prender LED RC2 (inicio del ciclo)   
     CALL    MOSTRAR_DISPLAY     ; Mostrar los digitos en el display
-    BTFSS   ADCON0, GO          ; Verificar si la conversiÃ³n ADC estÃ¡ en curso
-    CALL    ADC                 ; Si no estÃ¡ en curso, llamar a la rutina de ADC
-    BSF    PORTC, 2             ; apagar LED RC2 (fin del ciclo)
+    BTFSS   ADCON0, GO          ; Verificar si la conversión ADC está en curso
+    CALL    ADC                 ; Si no está en curso, llamar a la rutina de ADC
+    BTFSC   PORTC, 2            ; Verifico si esta calentando
+    CALL    CONTROL             ; Controlo no superar la temperatura de corte
 
     GOTO    MAIN_LOOP
 
 
+CONTROL:
+; Testeo la parte Alta
+    BANK0
+    MOVF    TCH, W
+    SUBWF   ADRESH, 0
+    BTFSC   STATUS, Z           ; Si dio 0, chequeo la parte baja
+    GOTO    CONTROLB
+    BTFSS   STATUS, C           ; Si me pase de temperatura, apago la pava
+    BCF     PORTC, 2
+    RETURN
 
+; Testeo la parte Baja
+CONTROLB:                       
+    MOVF    TCL, W
+    SUBWF   ADRESL, 0
+    BTFSC   STATUS, Z           ; Si dio 0, apago la pava
+    BCF     PORTC, 2
+    BTFSS   STATUS, C           ; Si me pase de temperatura, apago la pava
+    BCF     PORTC, 2
+    RETURN
 
-LOOP:   ; hay alguna tecla presionada?
-	MOVLW 0x0F	    ; pongo 1 todas las columnas
-	MOVWF PORTB	    ; 
-	MOVF  PORTB, W	    ; y veo todas las filas
-    ANDLW 0xF0          ; enmascarar filas
-    BTFSC STATUS, Z
-	GOTO  LOOP	    ; no hay teclas presionadas -> vuelvo al loop
+LOOP_KEYPAD:                        ; hay alguna tecla presionada?
+    CALL    MOSTRAR_DISPLAY         ; Mostrar los digitos en el display
+    CALL    RETARDO_200ms
+
+	MOVLW   0xF0	                ; Pongo 1 todas las filas
+	MOVWF   PORTB	    
+	MOVF    PORTB, W	            ; Testeo columnas
+    ANDLW   0x0F                    ; Enmascarar columnas
+    BTFSC   STATUS, Z
+	GOTO    LOOP_KEYPAD	            ; No hay teclas presionadas -> vuelvo al loop
 	; Si -> Antirebote
-	CALL  RETARDO
-	MOVF  PORTB, W	    ; 
-    ANDLW 0xF0          ; 
-    BTFSC STATUS, Z
-	GOTO  LOOP	    ; no hay teclas presionadas -> vuelvo al loop
-	; Si -> voy a escanear las teclas
-	CALL  ESCANEAR_TECLAS
+	CALL    RETARDO
+	MOVF    PORTB, W	     
+    ANDLW   0x0F                    ; Enmascarar columnas
+    BTFSC   STATUS, Z
+	GOTO    LOOP_KEYPAD	            ; No hay teclas presionadas -> vuelvo al loop
+	; Si -> Escanear las teclas
+	CALL    ESCANEAR_TECLAS
     RETURN
 
 ESCANEAR_TECLAS:
-	CLRF  COL	    ; col 1
-	MOVLW 0x08	    ; RB3
-	MOVWF COLMASK	    ; en alto
-ESCANEAR_FILAS:		    ; detectar fila
-	CLRF  INDICE
-	MOVF  COLMASK, W
-	MOVWF PORTB
-        BTFSC PORTB, 4	    ; fila 1 en alto?
-        GOTO  OFFSET_COL	    ; si -> offset=0
-	CALL  SUMO_4	    ; no -> Indice += 4, y sigo
-	BTFSC PORTB, 5	    ; fila 2 en alto?
-        GOTO  OFFSET_COL	    ; si -> offset=4
-	CALL  SUMO_4	    ; no -> Indice += 4, y sigo
-        BTFSC PORTB, 6	    ; fila 3 en alto?
-        GOTO  OFFSET_COL	    ; si -> offset=8	    
-	CALL  SUMO_4	    ; no -> Indice += 4, y sigo
-	BTFSC PORTB, 7	    ; fila 4 en alto?
-        GOTO  OFFSET_COL     ; si -> offset=12
-	RRF   COLMASK	    ; no -> siguiente columna
-	INCF  COL, 1	    ; 
-	MOVLW 0x04
-	SUBWF COL
-	BTFSS STATUS, Z	    ; todas las columnas?
-	GOTO  ESCANEAR_FILAS; no -> seguimos
-	MOVLW 0xFF	    ; si -> volvemos
-	MOVF  INDICE, 1	    ;	    con el indice en 0xFF
+	CLRF    ROW
+	MOVLW   B'10000000'             ; Pongo fila 1 en alto
+	MOVWF   ROWMASK
+
+ESCANEAR_COL:		                ; Detectar columna
+	CLRF    INDICE
+	MOVF    ROWMASK, W
+	MOVWF   PORTB
+    BTFSC   PORTB, 3	            ; Columna 1 (RB3) en alto?
+    GOTO    OFFSET_ROW	            ; si -> offset = 0
+	CALL    SUMO_4	                ; no -> Indice += 4, y sigo
+    
+	BTFSC   PORTB, 2	            ; Columna 2 (RB2) en alto?
+    GOTO    OFFSET_ROW	            ; si -> offset = 4
+	CALL    SUMO_4	                ; no -> Indice += 4, y sigo
+
+    BTFSC   PORTB, 1	            ; Columna 3 (RB1) en alto?
+    GOTO    OFFSET_ROW	            ; si -> offset = 8	    
+	CALL    SUMO_4	                ; no -> Indice += 4, y sigo
+
+	BTFSC   PORTB, 0	            ; Columna 4 (RB0) en alto?
+    GOTO    OFFSET_ROW              ; si -> offset = 12
+	RRF     ROWMASK	                ; no -> siguiente fila
+    
+	INCF    ROW, 1	        
+	MOVLW   0x04
+	SUBWF   ROW
+	BTFSS   STATUS, Z	            ; Se revisaron todas las filas?
+    GOTO    ESCANEAR_COL            ; no -> seguimos escaneando columnas
+	MOVLW   0xFF	                ; si -> volvemos
+	MOVF    INDICE, 1	            ; con el indice en 0xFF
 	RETURN
-OFFSET_COL:
-	MOVF  COL, W
-	ADDWF INDICE, 1
+
+OFFSET_ROW:
+	MOVF    ROW, W
+	ADDWF   INDICE, 1
+    CALL    TECLAS	                ; Obtener tecla presionada
+    MOVWF   TECLA	                ; Guardar tecla presionada
 	RETURN		    
 
+SUMO_4:
+	MOVLW   0x04	                ; Sumo 4
+    ADDWF   INDICE	                ; al indice
+    RETURN
 
-
+; --- Interrupciones ---
 ISR:
     BTFSC   INTCON, RBIF ; Verificar si es interrupción por cambio en PORTB
     GOTO    ISR_PORTB
@@ -156,7 +219,99 @@ ISR:
 
 
 ISR_PORTB:
-    BTFSS   
-    END
+    ; Antirebote
+	MOVLW   0xF0	                ; Pongo 1 todas las filas
+	MOVWF   PORTB	    
+    CALL    RETARDO   
+	MOVF    PORTB, 0	            ; Testeo la columna
+    ANDLW   0x0F                    ; Enmascarar columnas
+    BTFSC   STATUS, Z
+	RETFIE	                        ; No hay teclas presionadas -> salgo de la interrupcion
 
-    ;CALL en la interrupción
+    
+    ; Selecciono la primer Fila:
+    MOVLW   B'10000000'           
+	MOVWF   ROWMASK
+	MOVF    ROWMASK, W
+	MOVWF   PORTB
+    BTFSC   PORTB, 0	            ; fila 1 en alto?
+    GOTO    ISR_OPTIONS	            ; Entro a la rutina de OPTIONS
+    
+    ; Selecciono la segunda Fila:
+    MOVLW   B'01000000'           
+	MOVWF   ROWMASK
+    MOVF    ROWMASK, W
+    MOVWF   PORTB
+	BTFSC   PORTB, 0	            ; fila 2 en alto?
+    GOTO    ISR_ONOFF	            ; Entro a la rutina de INICIAR/PARAR
+
+    ; Si no es las filas utilizadas salgo de la interrupcion
+    RETFIE
+
+
+; Rutina de OPTIONS
+ISR_OPTIONS:
+    BSF     PORTC, 5                        ; Prendo un LED que me indica que estoy en OPTIONS
+    BCF     PORTC, 2                        ; Apago la pava
+
+    ; Guardo la temperatura de corte en variable temporales para separarla en digitos
+    BANK0
+    MOVF    TCH, W
+    MOVWF   temp16H
+    BANK1
+    MOVF    TCL, W
+    BANK0
+    MOVWF   temp16L
+    CALL    SEPARAR_3DIGITOS                ; Separo los digitos de la temperatura de corte actual para mostrala en los display
+
+; Display centenas
+T1:
+    CALL    LOOP_KEYPAD             ; Escaneo el teclado
+    BTFSC   TECLA, 4
+    GOTO    SET_TEMP                ; Si se apreto options seteo la temperatura
+    BTFSC   TECLA, 5
+    GOTO    T1                      ; Si se apreto cualquier tecla sin utilidad escaneo denuevo
+    MOVF    TECLA,W
+    MOVWF   centenas                ; Guardo el valor de la tecla escaneada en centenas
+    
+; Display decenas
+T2:
+    CALL    LOOP_KEYPAD             ; Repito para decenas
+    BTFSC   TECLA, 4
+    GOTO    SET_TEMP
+    BTFSC   TECLA, 5
+    GOTO    T2
+    MOVF    TECLA,W
+    MOVWF   decenas
+    
+; Display unidades         
+T3:
+    CALL    LOOP_KEYPAD             ; Repito para unidades
+    BTFSC   TECLA, 4
+    GOTO    SET_TEMP
+    BTFSC   TECLA, 5
+    GOTO    T3
+    MOVF    TECLA,W
+    MOVWF   unidades
+    GOTO    T1                      ; Retorno al display 1
+    
+SET_TEMP:                           ; Guardo el valor de la temperatura de corte y salgo de la Interrupcion
+    CALL    COMBINAR_3DIGITOS
+    BCF     PORTC, 5                ; Apago el LED que me indica que estoy en OPTIONS
+    RETFIE
+
+; Rutina de INICIAR/PARAR
+ISR_ONOFF:
+    BTFSS   PORTC, 2                ; Me fijo si esta prendida, si es asi skipeo
+    GOTO    TURNON_I
+    GOTO    TURNOFF_I
+
+TURNON_I:
+    BSF     PORTC, 2
+    RETFIE
+TURNOFF_I:
+    BCF     PORTC,2
+    RETFIE
+
+
+END
