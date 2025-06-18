@@ -62,7 +62,7 @@ MAIN_LOOP:
     CALL    MOSTRAR_DISPLAY     ; Mostrar los digitos en el display
     BTFSS   ADCON0, GO          ; Verificar si la conversiÃ³n ADC estÃ¡ en curso
     CALL    ADC                 ; Si no estÃ¡ en curso, llamar a la rutina de ADC
-    BTFSC   PORTC, 2            ; Verifico si esta calentando
+    BTFSS   PORTC, 2            ; Verifico si esta calentando
     CALL    CONTROL             ; Controlo no superar la temperatura de corte
     ;CALL    TX_TEXTO            ; Transmitir texto por UART
     GOTO    MAIN_LOOP
@@ -171,7 +171,14 @@ T3F:
     GOTO    T3F
     
 SET_TEMP:                           ; Guardo el valor de la temperatura de corte y salgo de la Interrupcion
+    CALL    RETARDO_200ms
     CALL    COMBINAR_3DIGITOS
+    MOVF    decenas, W
+    MOVWF   decenascorte
+    MOVF    unidades, W
+    MOVWF   unidadescorte
+    MOVF    decimas, W
+    MOVWF   decimascorte
     BSF     PORTC, 5                ; Apago el LED que me indica que estoy en OPTIONS
     RETFIE
 

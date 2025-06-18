@@ -42,6 +42,7 @@ TECLAS:
 ; == Rutina de multiplexado ==
 ; ============================
 MOSTRAR_DISPLAY:
+    BANK0
     CALL    DISPLAY_DECENAS
     CALL    DISPLAY_UNIDADES
     CALL    DISPLAY_DECIMAS
@@ -90,11 +91,10 @@ DISPLAY_DECIMAS:
 ; == Rutina de retardo 16 ms ==
 ; =============================
 RETARDO:
-    BANK0
     CLRF TMR0               ; Limpiar TMR0
-    BCF INTCON,TMR0IF       ; Limpia el flag de interrupción TMR0
+    BCF INTCON,T0IF       ; Limpia el flag de interrupción TMR0
 LOOP_RETARDO:
-    BTFSS INTCON, TMR0IF    ; Espera a que TMR0 se desborde
+    BTFSS INTCON, T0IF    ; Espera a que TMR0 se desborde
     GOTO LOOP_RETARDO       ; Si no se desbordó, espera
     RETURN
 
@@ -120,15 +120,6 @@ RETARDO_200ms:
 ; =========== ADC ============
 ; ============================
 ADC:
-    BANK0
-
-    ; Prueba de conversión ADC
-    MOVLW   b'00000000'
-    MOVWF   ADRESH
-    BANK1
-    MOVLW   b'00000000'
-    MOVWF   ADRESL
-    
     ; Leer ADRESH (banco 0)
     BANK0
     MOVF    ADRESH, W
@@ -154,8 +145,10 @@ ADC:
 CONTROL:
 ; Testeo la parte Alta
     BANK0
-    MOVF    TCH, W
-    SUBWF   ADRESH, 0
+    BCF	    STATUS, Z
+    BSF	    STATUS, C
+    MOVF    ADRESH, W
+    SUBWF   TCH, 0
     BTFSC   STATUS, Z           ; Si dio 0, chequeo la parte baja
     GOTO    CONTROLB
     BTFSS   STATUS, C           ; Si me pase de temperatura, apago la pava
@@ -163,9 +156,11 @@ CONTROL:
     RETURN
 
 ; Testeo la parte Baja
-CONTROLB:                       
-    MOVF    TCL, W
-    SUBWF   ADRESL, 0
+CONTROLB:
+    BANK1
+    MOVF    ADRESL, W
+    SUBWF   TCL, 0
+    BANK0
     BTFSC   STATUS, Z           ; Si dio 0, apago la pava
     TURNOFF  
     BTFSS   STATUS, C           ; Si me pase de temperatura, apago la pava
@@ -251,7 +246,7 @@ TX_TEXTO:
     ; Envía: Temp: xx.x C, Corte: xx.x C\r\n
     ; Envía caracteres con CALL TX_BYTE
 
-    MOVLW   'T'  ; ejemplo
+    MOVLW   'T'  
     CALL    TX_BYTE
     MOVLW   'e'
     CALL    TX_BYTE

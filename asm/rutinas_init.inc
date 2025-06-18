@@ -31,7 +31,7 @@ CONFIGURAR:
     MOVWF    OSCCON
 
     ; ConfiguraciÃ³n ADC ADCON1: (banco 1) (01)
-    MOVLW   b'10000000'     ; vref+ = AN3, vref- = Vss (porque es el puerto AN2 donde esta el sensor)
+    MOVLW   b'10010000'     ; vref+ = AN3, vref- = Vss (porque es el puerto AN2 donde esta el sensor)
     MOVWF   ADCON1
 
     ; Configuracion de IOCB
@@ -76,7 +76,7 @@ INICIALIZAR:
     MOVWF   TCH
     MOVLW   B'00100000'
     MOVWF   TCL
-
+    
     ; Iniciar conversiÃ³n ADC
     BSF     ADCON0, GO
     
