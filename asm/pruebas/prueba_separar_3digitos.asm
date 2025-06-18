@@ -14,108 +14,91 @@ CBLOCK 0x20
     unidades
 ENDC
 
-; --- Rutina: Separar ADC de 10 bits en centenas, decenas y unidades ---
-SEPARAR_3DIGITOS:
-    ; Leer ADRESH (banco 0)
-    MOVF    ADRESH, W
-    MOVWF   temp16H
 
-    ; Leer ADRESL (banco 1)
-    BSF     STATUS, RP0
-    BCF     STATUS, RP1
-    MOVF    ADRESL, W
-    BCF     STATUS, RP0    ; Volver a banco 0
-    BCF     STATUS, RP1
-    MOVWF   temp16L
+COMBINAR_3DIGITOS:
+    BANK0
+    CLRF    temp16H             ; temp16H:temp16L = 0
+    CLRF    temp16L
 
-    CLRF    centenas
-    CLRF    decenas
-    CLRF    unidades
-
-CENT_LOOP:
-    MOVF    temp16H, W
-    BTFSS   STATUS, Z
-    GOTO    RESTA_CIEN
-    ; temp16H == 0, comparar temp16L con 100
+    ; Sumar centenas * 100
+    MOVF    centenas, W
+    MOVWF   factor              ; factor = centenas
     MOVLW   D'100'
-    SUBWF   temp16L, W
-    BTFSS   STATUS, C
-    GOTO    DECI_LOOP
-    ; Si temp16L >= 100, restar 100 (0x9C)
-    MOVF    temp16L, W
-    ADDLW   0x9C      ; -100
-    MOVWF   temp16L
-    INCF    centenas, F
-    ; --- Chequeo extra para evitar pasarse ---
-    MOVLW   D'100'
-    SUBWF   temp16L, W
-    BTFSS   STATUS, C
-    GOTO    DECI_LOOP
-    GOTO    CENT_LOOP
+    CALL    MULTIPLICAR         ; resultado en temp16H:temp16L
+    ; temp16H:temp16L = centenas * 100
 
-RESTA_CIEN:
-    ; temp16H > 0, siempre restar 100 (0x9C)
-    MOVF    temp16L, W
-    ADDLW   0x9C      ; -100
-    MOVWF   temp16L
-    BTFSC   STATUS, C
-    GOTO    NO_BORROW_C
-    DECF    temp16H, F
-NO_BORROW_C:
-    INCF    centenas, F
-    GOTO    CENT_LOOP
-
-DECI_LOOP:
+    ; Guardar resultado parcial en TCH:TCL
     MOVF    temp16H, W
-    BTFSS   STATUS, Z
-    GOTO    RESTA_DIEZ
+    MOVWF   TCH
+    MOVF    temp16L, W
+    MOVWF   TCL
+
+    ; Sumar decenas * 10
+    MOVF    decenas, W
+    MOVWF   tabla7seg
     MOVLW   D'10'
-    SUBWF   temp16L, W
+    CALL    MULTIPLICAR     ; resultado en temp16H:temp16L
+
+    ; Sumar a TCH:TCL
+    MOVF    TCL, W
+    ADDWF   temp16L, W
+    MOVWF   TCL
+    MOVF    TCH, W
+    ADDWF  temp16H, W
+    MOVWF   TCH
+
+    ; Sumar unidades
+    MOVF    TCL, W
+    ADDWF   unidades, W
+    MOVWF   TCL
+
+    ; Si hay carry, sumarlo a TCH
     BTFSS   STATUS, C
-    GOTO    UNID_LOOP
-    MOVF    temp16L, W
-    ADDLW   0xF6      ; -10
-    MOVWF   temp16L
-    INCF    decenas, F
-    GOTO    DECI_LOOP
+    INCF    TCH, F
 
-RESTA_DIEZ:
-    MOVF    temp16L, W
-    ADDLW   0xF6      ; -10
-    MOVWF   temp16L
-    BTFSC   STATUS, C
-    GOTO    NO_BORROW_D
-    DECF    temp16H, F
-NO_BORROW_D:
-    INCF    decenas, F
-    GOTO    DECI_LOOP
+    RETURN
 
-UNID_LOOP:
+;----------------------------------------------------------
+; RUTINA: MULTIPLICAR
+; Entrada: W = factorx10, factor
+; Salida:  temp16H:temp16L = resultado (16 bits)
+;----------------------------------------------------------
+MULTIPLICAR:
+    CLRF    temp16H
+    CLRF    temp16L
+    MOVWF   temp16L         ; temp16L = factorx10
+    CLRF    temp16H
+    MOVF    factor, W       ; multiplicador
+    MOVWF   factor
+
+MULT_LOOP:
+    MOVF    factor, F
+    BTFSC   STATUS, Z
+    RETURN
+
     MOVF    temp16L, W
-    MOVWF   unidades
+    ADDWF   temp16L, F
+    BTFSS   STATUS, C
+    INCF    temp16H, F
+
+    DECFSZ  factor, F
+    GOTO    MULT_LOOP
+
     RETURN
 
 INICIO:
-    BCF STATUS, RP0
-    BCF STATUS, RP1
+    BANK0
+    MOVLW   0x03
+    MOVWF   centenas
 
-    ; Cargar parte alta (ADRESH, banco 0)
-    MOVLW   0x03    ; <-- Cambia aquí para el valor alto
-    MOVWF   ADRESH
+    MOVLW   0x02
+    MOVWF   decenas
 
-    ; Cambiar a banco 1 para ADRESL
-    BSF     STATUS, RP0
-    BCF     STATUS, RP1
-    MOVLW   0xFF    ; <-- Cambia aquí para el valor bajo
-    MOVWF   ADRESL
+    MOVLW   0x01
+    MOVWF   unidades
 
-    ; Volver a banco 0 antes de llamar a la rutina
-    BCF     STATUS, RP0
-    BCF     STATUS, RP1
+    GOTO    COMBINAR_3DIGITOS
 
-    CALL    SEPARAR_3DIGITOS
-
-    ; Loop infinito para observar resultados
 ESPERA:
     GOTO    ESPERA
 

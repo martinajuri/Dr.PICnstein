@@ -21,11 +21,11 @@ BANK3       macro
             endm
 
 TURNON      macro
-    BSF     PORTC, 2
-    BSF     PORTC, 4
+    BCF     PORTC, 2
+    BCF     PORTC, 4
             endm
             
 TURNOFF     macro
-    BCF     PORTC, 2
-    BCF     PORTC, 4
+    BSF     PORTC, 2
+    BSF     PORTC, 4
             endm

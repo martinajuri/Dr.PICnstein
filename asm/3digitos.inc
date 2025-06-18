@@ -1,15 +1,15 @@
 ; -----------------------------------------------------------
 ; Rutina: SEPARAR_3DIGITOS
 ; Entrada: temp16H, temp16L (valor de 10 bits)
-; Salida: centenas, decenas, unidades (en RAM)
-; Usa: centenas, decenas, unidades
+; Salida: decenas, unidades, decimas (en RAM)
+; Usa: decenas, unidades, decimas
 ; -----------------------------------------------------------
 
 SEPARAR_3DIGITOS:
     BANK0
-    CLRF    centenas
     CLRF    decenas
     CLRF    unidades
+    CLRF    decimas
 
 CENT_LOOP:
     MOVF    temp16H, W
@@ -22,7 +22,7 @@ CENT_LOOP:
     MOVF    temp16L, W
     ADDLW   0x9C      ; -100
     MOVWF   temp16L
-    INCF    centenas, F
+    INCF    decenas, F
     MOVLW   D'100'
     SUBWF   temp16L, W
     BTFSS   STATUS, C
@@ -38,7 +38,7 @@ RESTA_CIEN:
     DECF    temp16H, F
 
 NO_BORROW_C:
-    INCF    centenas, F
+    INCF    decenas, F
     GOTO    CENT_LOOP
 
 DECI_LOOP:
@@ -52,7 +52,7 @@ DECI_LOOP:
     MOVF    temp16L, W
     ADDLW   0xF6      ; -10
     MOVWF   temp16L
-    INCF    decenas, F
+    INCF    unidades, F
     GOTO    DECI_LOOP
 
 RESTA_DIEZ:
@@ -64,17 +64,17 @@ RESTA_DIEZ:
     DECF    temp16H, F
 
 NO_BORROW_D:
-    INCF    decenas, F
+    INCF    unidades, F
     GOTO    DECI_LOOP
 
 UNID_LOOP:
     MOVF    temp16L, W
-    MOVWF   unidades
+    MOVWF   decimas
     RETURN
 
 ;----------------------------------------------------------
 ; RUTINA: COMBINAR_3DIGITOS
-; Entrada: centenas, decenas, unidades (RAM)
+; Entrada: decenas, unidades, decimas (RAM)
 ; Salida:  TCH (parte alta), TCL (parte baja)
 ; Usa:     temp16H, temp16L, factor (temporales)
 ;----------------------------------------------------------
@@ -84,12 +84,13 @@ COMBINAR_3DIGITOS:
     CLRF    temp16H             ; temp16H:temp16L = 0
     CLRF    temp16L
 
-    ; Sumar centenas * 100
-    MOVF    centenas, W
-    MOVWF   factor              ; factor = centenas
+    ; Sumar decenas * 100
+    MOVF    decenas, W
+    MOVWF   factor              ; factor = decenas
     MOVLW   D'100'
+    MOVWF   factore10
     CALL    MULTIPLICAR         ; resultado en temp16H:temp16L
-    ; temp16H:temp16L = centenas * 100
+    ; temp16H:temp16L = decenas * 100
 
     ; Guardar resultado parcial en TCH:TCL
     MOVF    temp16H, W
@@ -97,55 +98,58 @@ COMBINAR_3DIGITOS:
     MOVF    temp16L, W
     MOVWF   TCL
 
-    ; Sumar decenas * 10
-    MOVF    decenas, W
-    MOVWF   tabla7seg
+    ; Sumar unidades * 10
+    MOVF    unidades, W
+    MOVWF   factor              ; factor = decenas
     MOVLW   D'10'
+    MOVWF   factore10
     CALL    MULTIPLICAR     ; resultado en temp16H:temp16L
 
     ; Sumar a TCH:TCL
     MOVF    TCL, W
     ADDWF   temp16L, W
     MOVWF   TCL
+    
+    ; Si hay carry, sumarlo a TCH
+    BTFSC   STATUS, C
+    INCF    TCH, F
+    
     MOVF    TCH, W
     ADDWF  temp16H, W
     MOVWF   TCH
-
-    ; Sumar unidades
+    
+    ; Sumar decimas
     MOVF    TCL, W
-    ADDWF   unidades, W
+    ADDWF   decimas, W
     MOVWF   TCL
 
     ; Si hay carry, sumarlo a TCH
-    BTFSS   STATUS, C
+    BTFSC   STATUS, C
     INCF    TCH, F
 
     RETURN
 
 ;----------------------------------------------------------
 ; RUTINA: MULTIPLICAR
-; Entrada: W = factorx10, factor
+; Entrada: factore10, factor
 ; Salida:  temp16H:temp16L = resultado (16 bits)
 ;----------------------------------------------------------
 MULTIPLICAR:
     CLRF    temp16H
-    CLRF    temp16L
-    MOVWF   temp16L         ; temp16L = factorx10
-    CLRF    temp16H
-    MOVF    factor, W       ; multiplicador
-    MOVWF   factor
+    CLRF    temp16L    
 
 MULT_LOOP:
-    MOVF    factor, F
+    MOVF    factor, W
     BTFSC   STATUS, Z
     RETURN
+    DECF  factor, 1
 
     MOVF    temp16L, W
-    ADDWF   temp16L, F
-    BTFSS   STATUS, C
+    ADDWF   factore10, 0
+    BTFSC   STATUS, C 
     INCF    temp16H, F
+    MOVWF   temp16L
 
-    DECFSZ  factor, F
     GOTO    MULT_LOOP
 
     RETURN
